@@ -1,6 +1,5 @@
-
 import RPi.GPIO as GPIO
-from time import sleep
+import time
 import datetime
 from firebase import firebase
 import Adafruit_DHT
@@ -13,10 +12,9 @@ import os
 from functools import partial
 
 GPIO.setmode(GPIO.BCM)
-GPIO.cleanup()
 GPIO.setwarnings(False)
 #----------------------------------------rain
-GPIO.setup(4,GPIO.IN) 
+GPIO.setup(14,GPIO.IN) 
 #--------------------------l298n window
 IN1=19
 IN2=13
@@ -49,12 +47,11 @@ pwm3.start(0)
 pin_to_circuit = 4
 #-------------------------SW420
 GPIO.setup(2,GPIO.IN, pull_up_down=GPIO.PUD_DOWN) 
-result = GPIO.input(2)
 #-------------------------DHT11
 sensor = Adafruit_DHT.DHT11
-humidity, temperature = Adafruit_DHT.read_retry(sensor,2)
+humidity, temperature = Adafruit_DHT.read_retry(sensor,3)
 #-------------------------PMS7003
-global pm1,pm2,pm10
+global pm2
 # Baud Rate
 dust = PMS7003()
 Speed = 9600
@@ -67,68 +64,176 @@ UART = '/dev/ttyAMA0'
 SERIAL_PORT = USB0
  
 #serial setting
-ser = serial.Serial(USB0,9600, timeout = 1)
+ser = serial.Serial(USB0,Speed, timeout = 1)
 #-------------------------firebase
-firebase = firebase.FirebaseApplication('https://myapplication-3f8f5.firebaseio.com/', None)
+#firebase = firebase.FirebaseApplication("https://window-6216a.firebaseio.com/", None)
+firebase = firebase.FirebaseApplication("https://myapplication-3f8f5.firebaseio.com/", None)
+result01= firebase.get('/window','open')
+#센서값 새로고침
+F5=firebase.get('/test3','F5') 
+#진동값 1에서0으로 새로고침
 #-------------------------setting with sen030131(light sensor)
-def rc_time (pin_to_circuit):
-    count = 0
-	#----------------------------------setting
-    GPIO.setup(pin_to_circuit, GPIO.OUT)
-    GPIO.output(pin_to_circuit, GPIO.LOW)
-    #Change the pin back to input
-    GPIO.setup(pin_to_circuit, GPIO.IN)
-	#-----------------------------------
-	#-----------------------------------sen030131
-    while (GPIO.input(pin_to_circuit) == GPIO.LOW):
-        count += 100
-    return count
-	
+#------------------------변수+인터럽트
+#--------------------------limit
+GPIO.setup(21,GPIO.IN) #pull_up_down=GPIO.PUD_UP)
+GPIO.setup(20,GPIO.IN)
+status=0
+a=1
+b=1
+c=1
+d=1
+def my_callback(channel):
+	global status,a,b,c
+	if status==0:
+		status=1
+		a=0
+		c=0
+		#if b==1: 
+		#	c=0
+def my_callback1(channel):
+	global status,b
+	if status ==0:
+		status=1
+		b=0
+		d=0
+GPIO.add_event_detect(21,GPIO.RISING,callback=my_callback)
+GPIO.add_event_detect(20,GPIO.RISING,callback=my_callback1)
+control=firebase.get('/window','open')
+control2=firebase.get('/AUTO','AUTO')
+#firebase에 업로드되는값이 많을수록 느리다
+#window수동제어
+	if control== "\"open\"":
+		print("수동제어온")	
+		#windowsetup=firebase.get('/test3/windowcontrol','state')
+		windowsetup=firebase.get('/window','start')
+		windowsetup1=firebase.get('/window','nostart')		
+		if a==1:
+			if windowsetup =="\"start\"":
+				pwm1.ChangeDutyCycle(30)
+				GPIO.output(IN1,GPIO.LOW)
+				GPIO.output(IN2,GPIO.HIGH)
+				pwm2.ChangeDutyCycle(30)
+				GPIO.output(IN3,GPIO.LOW)
+				GPIO.output(IN4,GPIO.HIGH)
+				print("수동제어열고있는중")	
+		if a==0:
+			print("수동제어정지1")	
+			GPIO.output(IN1,GPIO.LOW)
+			GPIO.output(IN2,GPIO.LOW)
+			GPIO.output(IN3,GPIO.LOW)
+			GPIO.output(IN4,GPIO.LOW)
+		if b==1:
+			if windowsetup1 =="\"nostart\"":
+				a=1
+				pwm1.ChangeDutyCycle(30)
+				GPIO.output(IN1,GPIO.HIGH)
+				GPIO.output(IN2,GPIO.LOW)
+				pwm2.ChangeDutyCycle(30)
+				GPIO.output(IN3,GPIO.HIGH)
+				GPIO.output(IN4,GPIO.LOW)
+				status=0
+				print("수동제어닫고있는중")	
+		if b==0:
+			print("수동제어정지2")	
+			GPIO.output(IN1,GPIO.LOW)
+			GPIO.output(IN2,GPIO.LOW)
+			GPIO.output(IN3,GPIO.LOW)
+			GPIO.output(IN4,GPIO.LOW)
+			status=0
+			c=1
+			d=1
+#window 자동제어
+if control2== "\"AUTO\"":
+		print("자동제어온")	
+		result1 = firebase.get('/AUTO','START')
+		result2 = firebase.get('/AUTO','STOP')
+		ser.flushInput()
+		buffer = ser.read(1024)
+		if result1 =="\"START\"":
+			if c==1:
+				if(dust.protocol_chk(buffer)):
+					data = dust.unpack_data(buffer)
+					pm2=data[dust.DUST_PM2_5_ATM]
+					if data[dust.DUST_PM2_5_ATM]<3:
+						print("자동제어열고있는중")	
+						print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
+						pwm1.ChangeDutyCycle(30)
+						GPIO.output(IN1, )
+						GPIO.output(IN2, GPIO.HIGH)
+						pwm2.ChangeDutyCycle(30)
+						GPIO.output(IN3, GPIO.LOW)
+						GPIO.output(IN4, GPIO.HIGH)
+					if data[dust.DUST_PM2_5_ATM]>=3:	
+						print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
+						print("자동제어닫고있는중")	
+						pwm1.ChangeDutyCycle(30)
+						GPIO.output(IN1, GPIO.HIGH)
+						GPIO.output(IN2, GPIO.LOW)
+						pwm2.ChangeDutyCycle(30)
+						GPIO.output(IN3, GPIO.HIGH)
+						GPIO.output(IN4, GPIO.LOW)
+			if c==0 or d==0:
+				print("자동제어정지")#1
+				GPIO.output(IN1, GPIO.LOW)
+				GPIO.output(IN2, GPIO.LOW)
+				GPIO.output(IN3, GPIO.LOW)
+				GPIO.output(IN4, GPIO.LOW)
+		if result2 =="\"STOP\"":
+			if d==1:
+				
+				print("자동제어 원상복구")#1
+				pwm1.ChangeDutyCycle(30)
+				GPIO.output(IN1, GPIO.HIGH)
+				GPIO.output(IN2, GPIO.LOW)
+				pwm2.ChangeDutyCycle(50)
+				GPIO.output(IN3, GPIO.HIGH)
+				GPIO.output(IN4, GPIO.LOW)
+			if d==0:
+				print("자동제어 정지!!")#1
+				GPIO.output(IN1,GPIO.LOW)
+				GPIO.output(IN2, GPIO.LOW)
+				GPIO.output(IN3, GPIO.LOW)
+				GPIO.output(IN4, GPIO.LOW)	
 def update_firebase():
 	while True:
-		#SW420 -vibdata
-		if result ==1:
-			str_vib = 'warning'.format(result)	
-			vibdata = {"shock": result}
-		firebase.patch('/sensor/vib', vibdata)
-		if result ==0:
-			str_vib = 'warning'.format(result)	
-			vibdata = {"shock": result}
-		firebase.patch('/sensor/vib', vibdata)
 		#DHT11 -temp
 		if humidity is not None and temperature is not None:
 			str_temp = ' {0:0.2f} *C '.format(temperature)	
 			str_hum  = ' {0:0.2f} %'.format(humidity)
-	#print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))	
+			print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))	
 		tempdata = {"temp": temperature, "humidity": humidity}
 		firebase.patch('/sensor/dht', tempdata)
-		#PMS7003 - dustdata
+		#PMS7003 - dustdata	
 		ser.flushInput()
 		buffer = ser.read(1024)
-		if(dust.protocol_chk(buffer)):
+		if (dust.protocol_chk(buffer)):
 			data = dust.unpack_data(buffer)
-	#print("send -PM2.5: %d" %(data[dust.DUST_PM2_5_ATM]))
+			print("send -| PM2.5: %d "%(data[dust.DUST_PM2_5_ATM]))
 			pm2=data[dust.DUST_PM2_5_ATM]
+		pm2=data[dust.DUST_PM2_5_ATM]
 		dustdata = {"dust": pm2}
 		firebase.patch('/sensor/pms',dustdata)
-		#sen030131 - lightdata
-		if rc_time(2)< 1800:	
-	#print("맑음",rc_time(2))
-			lightdata = {"조도값":rc_time(2)}
-		if rc_time(2) >=2000:
-	#print("흐림",rc_time(2))
-			lightdata = {"조도값":rc_time(2)}
-		firebase.patch('/sensor/light',lightdata) 	
 while True:
+	if F5=="\"1\"":
 		update_firebase()
-        #sleepTime = int(sleepTime)
-		sleep(1)
+	check=firebase.get('/sensor','vibreset')
+	result = GPIO.input(2)
+	if result==1:
+		str_vib = 'warning'.format(result)	
+		print('shock'.format(result))	
+		datad={"shock":result}
+		firebase.patch('/sensor/vib',datad)
+	if check =="\"1\"":
+		resultd=0
+		dataa={"shock":resultd}
+		firebase.patch('/sensor/vib',dataa)
 #미세먼지+빗물자동제어
+"""
 while True:
 	#firebase 값 가져오기
 	#미세먼지 빗물자동제어 버튼 0/01
-	result0 = firebase.get('/window','start')
-	result01 = firebase.get('/window','nostart')
+#	result0 = firebase.get('/window','start')
+#	result01 = firebase.get('/window','nostart')
 	#limit setting 
 	open= GPIO.input(2)
 	close= GPIO.input(3)
@@ -183,49 +288,15 @@ while True:
 			GPIO.output(IN1, False)
 			GPIO.output(IN2, False)
 			print("창문 정지")
-#window수동제어
-while True: 
-	open= GPIO.input(2) 
-	close= GPIO.input(3)
-	#window 수동버튼 1/2
-	result1 = firebase.get('/window','start') #change 
-	result2 = firebase.get('/window','nostart') #change 
-	GPIO.output(IN1, False)
-	GPIO.output(IN2, False)
-	GPIO.output(IN3, False)
-	GPIO.output(IN4, False)
-	if result1 =="\"start\"": #change 
-		pwm1.ChangeDutyCycle(30)
-		GPIO.output(IN1, False)
-		GPIO.output(IN2, True)
-		GPIO.output(IN3, False)
-		GPIO.output(IN4, True)
-		#limit input-> stop 
-		if open == 1 or close ==1:
-			GPIO.output(IN1, False)
-			GPIO.output(IN2, False)
-			GPIO.output(IN1, False)
-			GPIO.output(IN2, False)
-			print("창문 정지")
-	if result2 =="\"nostart\"": #change 
-		pwm1.ChangeDutyCycle(30)
-		GPIO.output(IN1, True)
-		GPIO.output(IN2, False)
-		GPIO.output(IN3, True)
-		GPIO.output(IN4, False)
-		#limit input-> stop 
-		if open == 1 or close ==1:
-			GPIO.output(IN1, False)
-			GPIO.output(IN2, False)
-			GPIO.output(IN1, False)
-			GPIO.output(IN2, False)
-			print("창문 정지")
-			
+"""
+#limit -> 2핀/3핀 고정
+
 #blind자동제어 
-while True:
+"""
+while result3=="\"start\"": #change
 	#blind 자동버튼 3/4
-	result3 = firebase.get('/window','start') #change 
-	result4 = firebase.get('/window','nostart') #change 
+	#result3 = firebase.get('/window','start') #change 
+	#result4 = firebase.get('/window','nostart') #change 
 	#motor setting
 	GPIO.output(IN1, False)
 	GPIO.output(IN2, False)
@@ -258,9 +329,9 @@ while True:
 #blind수동제어
 while True:
 	#blind 수동버튼 7/8
-	result7 = firebase.get('/window','start') #change 
-	result8 = firebase.get('/window','nostart') #change 
-	result9=  firebase.get('/window','stop')#input
+	#result7 = firebase.get('/window','start') #change 
+	#result8 = firebase.get('/window','nostart') #change 
+	#result9=  firebase.get('/window','stop')#input
 	GPIO.output(IN5, False)
 	GPIO.output(IN6, False)
 	if result1 =="\"start\"": #change 
@@ -278,6 +349,6 @@ while True:
 		if result9=="\"stop\"":
 			GPIO.output(IN6, False)
 			GPIO.output(IN5, False)
-
+"""
 
 
