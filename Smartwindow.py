@@ -149,7 +149,7 @@ if control2== "\"1\"": #수정
 				if(dust.protocol_chk(buffer)):
 					data = dust.unpack_data(buffer)
 					pm2=data[dust.DUST_PM2_5_ATM]
-					if data[dust.DUST_PM2_5_ATM]<3:
+					if data[dust.DUST_PM2_5_ATM]<3 or GPIO.input(4)==0:
 						print("창문자동제어열고있는중")	
 						print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
 						pwm1.ChangeDutyCycle(30)
@@ -158,7 +158,7 @@ if control2== "\"1\"": #수정
 						pwm2.ChangeDutyCycle(30)
 						GPIO.output(IN3, GPIO.LOW)
 						GPIO.output(IN4, GPIO.HIGH)
-					if data[dust.DUST_PM2_5_ATM]>=3:	
+					if data[dust.DUST_PM2_5_ATM]>=3 or GPIO.input(4)==1:	
 						print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
 						print("창문자동제어닫고있는중")	
 						pwm1.ChangeDutyCycle(30)
