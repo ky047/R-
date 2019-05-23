@@ -179,7 +179,7 @@ if control2== "\"1\"": #수정
 				pwm1.ChangeDutyCycle(30)
 				GPIO.output(IN1, GPIO.HIGH)
 				GPIO.output(IN2, GPIO.LOW)
-				pwm2.ChangeDutyCycle(50)
+				pwm2.ChangeDutyCycle(30)
 				GPIO.output(IN3, GPIO.HIGH)
 				GPIO.output(IN4, GPIO.LOW)
 			if d==0:
@@ -293,4 +293,4 @@ while control4=="\"1\"": #change
 	    print("블라인드자동제어정지")
             GPIO.output(IN5,LOW)
             GPIO.output(IN5,LOW)
-
+#while firebase 값 실행안되면 1안- if문으로변경 2안-윗쪽으로 배치
