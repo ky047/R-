@@ -66,11 +66,9 @@ SERIAL_PORT = USB0
 #serial setting
 ser = serial.Serial(USB0,Speed, timeout = 1)
 #-------------------------firebase
-#firebase = firebase.FirebaseApplication("https://window-6216a.firebaseio.com/", None)
-firebase = firebase.FirebaseApplication("https://myapplication-3f8f5.firebaseio.com/", None)
-result01= firebase.get('/window','open')
+firebase = firebase.FirebaseApplication("https://window-6216a.firebaseio.com/", None))
 #센서값 새로고침
-F5=firebase.get('/test3','F5') 
+F5=firebase.get('/새로고침,수동제어','F5') 
 #진동값 1에서0으로 새로고침
 #-------------------------setting with sen030131(light sensor)
 #------------------------변수+인터럽트
@@ -98,17 +96,15 @@ def my_callback1(channel):
 		d=0
 GPIO.add_event_detect(21,GPIO.RISING,callback=my_callback)
 GPIO.add_event_detect(20,GPIO.RISING,callback=my_callback1)
-control=firebase.get('/window','open')
-control2=firebase.get('/AUTO','AUTO')
+control=firebase.get('/새로고참,수동제어','창문제어클릭') #수동제어
+control2=firebase.get('/AUTO','AUTO')   #자동제어 #수정
 #firebase에 업로드되는값이 많을수록 느리다
 #window수동제어
-	if control== "\"open\"":
+if control== "\"1\"": 
 		print("수동제어온")	
-		#windowsetup=firebase.get('/test3/windowcontrol','state')
-		windowsetup=firebase.get('/window','start')
-		windowsetup1=firebase.get('/window','nostart')		
+		windowsetup=firebase.get('/새로고침,수동제어'/windowcontrol,'state') #창문수동제어 - 버튼(left/right) 
 		if a==1:
-			if windowsetup =="\"start\"":
+			if windowsetup =="\"left\"":
 				pwm1.ChangeDutyCycle(30)
 				GPIO.output(IN1,GPIO.LOW)
 				GPIO.output(IN2,GPIO.HIGH)
@@ -123,7 +119,7 @@ control2=firebase.get('/AUTO','AUTO')
 			GPIO.output(IN3,GPIO.LOW)
 			GPIO.output(IN4,GPIO.LOW)
 		if b==1:
-			if windowsetup1 =="\"nostart\"":
+			if windowsetup1 =="\"right\"":
 				a=1
 				pwm1.ChangeDutyCycle(30)
 				GPIO.output(IN1,GPIO.HIGH)
@@ -143,10 +139,10 @@ control2=firebase.get('/AUTO','AUTO')
 			c=1
 			d=1
 #window 자동제어
-if control2== "\"AUTO\"":
+if control2== "\"AUTO\"": #수정
 		print("자동제어온")	
-		result1 = firebase.get('/AUTO','START')
-		result2 = firebase.get('/AUTO','STOP')
+		result1 = firebase.get('/AUTO','START') #수정
+		result2 = firebase.get('/AUTO','STOP')  #수정
 		ser.flushInput()
 		buffer = ser.read(1024)
 		if result1 =="\"START\"":
@@ -178,9 +174,8 @@ if control2== "\"AUTO\"":
 				GPIO.output(IN2, GPIO.LOW)
 				GPIO.output(IN3, GPIO.LOW)
 				GPIO.output(IN4, GPIO.LOW)
-		if result2 =="\"STOP\"":
+		if result2 =="\"STOP\"": #수정
 			if d==1:
-				
 				print("자동제어 원상복구")#1
 				pwm1.ChangeDutyCycle(30)
 				GPIO.output(IN1, GPIO.HIGH)
@@ -214,19 +209,24 @@ def update_firebase():
 		dustdata = {"dust": pm2}
 		firebase.patch('/sensor/pms',dustdata)
 while True:
+	#새로고침 버튼
 	if F5=="\"1\"":
 		update_firebase()
 	check=firebase.get('/sensor','vibreset')
+	#SW420 센서
 	result = GPIO.input(2)
 	if result==1:
 		str_vib = 'warning'.format(result)	
 		print('shock'.format(result))	
 		datad={"shock":result}
 		firebase.patch('/sensor/vib',datad)
+	#SW420 초기화
 	if check =="\"1\"":
 		resultd=0
 		dataa={"shock":resultd}
 		firebase.patch('/sensor/vib',dataa)
+	if blinde상태== "\"1\"":
+  		 firebase.patch('/setup',/블라인드상태)
 #미세먼지+빗물자동제어
 """
 while True:
