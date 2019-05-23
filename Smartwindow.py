@@ -277,8 +277,8 @@ while control4=="\"1\"": #change
         if rc_time(2)< 1800:    
             pwm3.ChangeDutyCycle(30)
 	    print("블라인드자동제어열고있는중")
-            GPIO.output(IN5,LOW)
-            GPIO.output(IN6,HIGH)
+            GPIO.output(IN5,HIGH)
+            GPIO.output(IN6,LOW)
             #정지
 	    print("블라인드자동제어정지")
             time.sleep(3)
