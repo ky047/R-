@@ -1,0 +1,322 @@
+import RPi.GPIO as GPIO
+import time
+import datetime
+import Adafruit_DHT
+from PMS7003 import PMS7003 
+import serial
+
+from firebase import firebase
+import urllib.request
+import json
+import os 
+from functools import partial
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+#----------------------------------------rain
+GPIO.setup(16,GPIO.IN) 
+#--------------------------l298n window
+IN1=19
+IN2=13
+ENA=26
+IN3=6
+IN4=5
+ENB=0
+
+GPIO.setup(IN1, GPIO.OUT)
+GPIO.setup(IN2, GPIO.OUT)
+GPIO.setup(ENA, GPIO.OUT)
+GPIO.setup(IN3, GPIO.OUT)
+GPIO.setup(IN4, GPIO.OUT)
+GPIO.setup(ENB, GPIO.OUT)   
+
+pwm1 = GPIO.PWM(ENA,100)
+pwm1.start(0)
+pwm2 = GPIO.PWM(ENB,100)
+pwm2.start(0)
+#--------------------------l298n blind
+IN5=7
+IN6=8
+ENC=1
+GPIO.setup(IN5, GPIO.OUT)
+GPIO.setup(IN6, GPIO.OUT)
+GPIO.setup(ENC, GPIO.OUT)
+pwm3 = GPIO.PWM(ENC,100)
+pwm3.start(0)
+#--------------------------sen030131
+pin_to_circuit = 4
+#-------------------------SW420
+GPIO.setup(2,GPIO.IN, pull_up_down=GPIO.PUD_DOWN) 
+#-------------------------DHT11
+sensor = Adafruit_DHT.DHT11
+humidity, temperature = Adafruit_DHT.read_retry(sensor,3)
+#-------------------------PMS7003
+global pm2,down
+# Baud Rate
+dust = PMS7003()
+Speed = 9600
+# UART / USB Serial
+USB0 = '/dev/ttyUSB0'
+UART = '/dev/ttyAMA0'
+# USE PORT
+SERIAL_PORT = USB0
+#serial setting
+ser = serial.Serial(USB0,Speed, timeout = 1)
+#-------------------------firebase
+firebase = firebase.FirebaseApplication("https://window-6216a.firebaseio.com/", None)
+#진동값 1에서0으로 새로고침
+#--------------------------limit
+
+#GPIO.setup(21,GPIO.IN) #pull_up_down=GPIO.PUD_UP)
+#GPIO.setup(20,GPIO.IN)
+#--------------------F5
+F5=firebase.get('/새로고침,수동제어','F5') 
+print(F5)
+#--------------------변수
+#right=GPIO.input(21)
+#left=GPIO.input(20)
+#--------------------	
+
+def rc_time (pin_to_circuit):
+	count = 0
+	#----------------------------------setting
+	GPIO.setup(pin_to_circuit, GPIO.OUT)
+	GPIO.output(pin_to_circuit, GPIO.LOW)
+    #sleep(1)
+
+    #Change the pin back to input
+	GPIO.setup(pin_to_circuit, GPIO.IN)
+	#-----------------------------------
+	#-----------------------------------sen030131
+	while (GPIO.input(pin_to_circuit) == GPIO.LOW):
+		count += 100   
+	return count	
+while True:
+	check=firebase.get('/sensor','vibreset')
+	result = GPIO.input(2)
+	if result==1:
+		str_vib = 'warning'.format(result)	
+		print('shock'.format(result))
+		time.sleep(0.05)
+		datad={"shock":result}
+		firebase.patch('/sensor/vib',datad)
+	if check =="\"1\"":
+		resultd=0
+		dataa={"shock":resultd}
+		firebase.patch('/sensor/vib',dataa)
+	#센서값 새로고침-위치 
+	F5=firebase.get('/새로고침,수동제어','F5')
+	while F5=="\"1\"":
+		print("새로고침버튼")
+		F5=firebase.get('/새로고침,수동제어','F5') 
+		#온습도
+		if humidity is not None and temperature is not None:
+			str_temp = ' {0:0.2f} *C '.format(temperature)  
+			str_hum  = ' {0:0.2f} %'.format(humidity)
+			print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))  
+		tempdata = {"temp": temperature, "humidity": humidity}
+		firebase.patch('/sensor/dht', tempdata)
+		#PMS7003 - dustdata 
+		ser.flushInput()
+		buffer = ser.read(1024)
+		if (dust.protocol_chk(buffer)):
+			data = dust.unpack_data(buffer)
+			print("send -| PM2.5: %d "%(data[dust.DUST_PM2_5_ATM]))
+			pm2=data[dust.DUST_PM2_5_ATM]
+		dustdata = {"dust": pm2}
+		firebase.patch('/sensor/pms',dustdata)
+		print("모니터링중")
+	#F5=firebase.get('/새로고침,수동제어','F5')
+	#수동제어
+	control=firebase.get('/새로고침,수동제어','창문제어클릭')
+	while control== "\"1\"": 
+		#noautowindow="\"stop\""
+		#noauto={"창문":noautowindow}
+		#firebase.patch('/setup',noauto)
+		#control=firebase.get('/새로고침,수동제어','창문제어클릭')
+		print("WINDOW제어 창들어왔습니다")
+		windowsetup=firebase.get('/새로고침,수동제어/windowcontrol','state')
+		blindsetup=firebase.get('/새로고침,수동제어/blindcontrol','state2')
+		#스위치 정지
+		if windowsetup =="\"left\"" :
+			#control=firebase.get('/새로고침,수동제어','창문제어클릭')
+			pwm1.ChangeDutyCycle(40)
+			GPIO.output(IN1, GPIO.HIGH)
+			GPIO.output(IN2, GPIO.LOW)
+			pwm2.ChangeDutyCycle(50)
+			GPIO.output(IN3, GPIO.HIGH)
+			GPIO.output(IN4, GPIO.LOW)
+			#수동시간정지
+			print("창문수동제어열고있는중")  
+			time.sleep(6.5)
+			print("수동정지")
+			GPIO.output(IN1,GPIO.LOW)
+			GPIO.output(IN2,GPIO.LOW)
+			GPIO.output(IN3,GPIO.LOW)
+			GPIO.output(IN4,GPIO.LOW)
+			handwindowset="\"stop\""
+			changehand={"state":handwindowset}
+			firebase.patch('/새로고침,수동제어/windowcontrol',changehand)
+			control=firebase.get('/새로고침,수동제어','창문제어클릭')
+		if windowsetup =="\"right\"":
+			pwm1.ChangeDutyCycle(40)
+			GPIO.output(IN1, GPIO.LOW)
+			GPIO.output(IN2, GPIO.HIGH)
+			pwm2.ChangeDutyCycle(50)
+			GPIO.output(IN3, GPIO.LOW)
+			GPIO.output(IN4, GPIO.HIGH)
+			print("창문수동제어닫고있는중") 
+			#수동시간정지
+			time.sleep(6.5)
+			print("수동정지!")
+			GPIO.output(IN1,GPIO.LOW)
+			GPIO.output(IN2,GPIO.LOW)
+			GPIO.output(IN3,GPIO.LOW)
+			GPIO.output(IN4,GPIO.LOW)
+			handwindowset="\"stop\""
+			changehand={"state":handwindowset}
+			firebase.patch('/새로고침,수동제어/windowcontrol',changehand)
+			control=firebase.get('/새로고침,수동제어','창문제어클릭')
+		if blindsetup =="\"up\"":
+			print("블라인드제어열고있는중")
+			pwm3.ChangeDutyCycle(50)
+			GPIO.output(IN5,GPIO.LOW)
+			GPIO.output(IN6,GPIO.HIGH)
+			time.sleep(8)
+			GPIO.output(IN5,GPIO.LOW)
+			GPIO.output(IN6,GPIO.LOW)
+			print("블라인드제어정지")
+			resultda="\"stop\""
+			blinddataa={"state2":resultda}
+			firebase.patch('/새로고침,수동제어/blindcontrol',blinddataa)
+			control=firebase.get('/새로고침,수동제어','창문제어클릭')
+		if blindsetup =="\"down\"" :
+			print("블라인드제어닫고있는중")
+			pwm3.ChangeDutyCycle(50)
+			GPIO.output(IN5,GPIO.HIGH)
+			GPIO.output(IN6,GPIO.LOW)
+			time.sleep(8)
+			GPIO.output(IN5,GPIO.LOW)
+			GPIO.output(IN6,GPIO.LOW)
+			print("블라인드제어정지")
+			resultda="\"stop\""
+			blinddataa={"state2":resultda}
+			firebase.patch('/새로고침,수동제어/blindcontrol',blinddataa)
+			control=firebase.get('/새로고침,수동제어','창문제어클릭')
+		control=firebase.get('/새로고침,수동제어','창문제어클릭')
+	#자동창문
+	autowindow = firebase.get('/setup','창문') 
+	autowindowsetup=firebase.get('/setup','창문상태')
+	autoblind =firebase.get('/setup','블라인드')
+	autoblindsetup=firebase.get('/setup','블라인드상태')
+	while autowindow =="\"1\"" or autoblind=="\"1\"":
+		autowindowsetup="\"1\""
+		auto={"창문상태":autowindow}
+		firebase.patch('/setup',auto)
+		if  autowindow =="\"1\"":
+			nohandwindow="\"stop\""
+			nohand={"state":nohandwindow}
+			firebase.patch('/새로고침,수동제어/windowcontrol',nohand)
+			print("준비중")		
+			ser.flushInput()
+			buffer = ser.read(1024)	
+			if(dust.protocol_chk(buffer)):
+				autowindow = firebase.get('/setup','창문')
+				data = dust.unpack_data(buffer)	
+				#GPIO.input(16) ==1 -> norain
+				if data[dust.DUST_PM2_5_ATM] <35 or GPIO.input(16)==1:
+					autowindow = firebase.get('/setup','창문')
+					print("빗물:",GPIO.input(16))
+					print("창문자동제어열고있는중")	
+					print(right)
+					print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
+					if right ==0:
+						pwm1.ChangeDutyCycle(40)
+						GPIO.output(IN1, GPIO.HIGH)
+						GPIO.output(IN2, GPIO.LOW)
+						pwm2.ChangeDutyCycle(50)
+						GPIO.output(IN3, GPIO.HIGH)
+						GPIO.output(IN4, GPIO.LOW)
+						#자동시간정지
+						time.sleep(6.5)
+						print("정지")
+						left=0
+						right=1
+						GPIO.output(IN1,GPIO.LOW)
+						GPIO.output(IN2,GPIO.LOW)
+						GPIO.output(IN3,GPIO.LOW)
+						GPIO.output(IN4,GPIO.LOW)
+
+				if data[dust.DUST_PM2_5_ATM] >35 or GPIO.input(16) ==0:
+					autowindow = firebase.get('/setup','창문')
+					print("빗물:",GPIO.input(16))
+					print(left)
+					print("send -  PM2.5: %d" %data[dust.DUST_PM2_5_ATM])
+					print("창문자동제어닫고있는중")	
+					if left ==0:
+						pwm1.ChangeDutyCycle(40)
+						GPIO.output(IN1, GPIO.LOW)
+						GPIO.output(IN2, GPIO.HIGH)
+						pwm2.ChangeDutyCycle(50)
+						GPIO.output(IN3, GPIO.LOW)
+						GPIO.output(IN4, GPIO.HIGH)					
+						#자동시간정지
+						time.sleep(6.5)
+						print("정지")
+						left=1
+						right=0
+						GPIO.output(IN1,GPIO.LOW)
+						GPIO.output(IN2,GPIO.LOW)
+						GPIO.output(IN3,GPIO.LOW)
+						GPIO.output(IN4,GPIO.LOW)
+						#autowindow = firebase.get('/setup','창문') 
+						#autowindowsetup=firebase.get('/setup','창문상태')
+
+		if autowindow=="\"0\"":
+			right=0
+			left=0
+			GPIO.output(IN1,GPIO.LOW)
+			GPIO.output(IN2,GPIO.LOW)
+			GPIO.output(IN3,GPIO.LOW)				
+			GPIO.output(IN4,GPIO.LOW)
+			stopauto="\"stop\""
+			autostop={"창문":stopauto}
+			firebase.patch('/setup',autostop)
+			autowindowsetup="\"1\""
+			auto={"창문상태":autowindow}
+			firebase.patch('/setup',auto)
+		if autoblind =="\"1\"":
+			print("블라인드자동제어준비중")
+			print(rc_time(4))
+			if rc_time(4) < 2000:
+				print("블라인드자동제어닫고있는중")
+				pwm3.ChangeDutyCycle(50)
+				GPIO.output(IN5,GPIO.HIGH)
+				GPIO.output(IN6,GPIO.LOW)
+				time.sleep(5)
+				GPIO.output(IN5,GPIO.LOW)
+				GPIO.output(IN6,GPIO.LOW)
+				print("블라인드정지")
+				autoblind =firebase.get('/setup','블라인드')
+				autoblindsetup=firebase.get('/setup','블라인드상태')
+			if rc_time(4) >= 2000:
+				print("블라인드자동제어열고있는중")
+				pwm3.ChangeDutyCycle(50)
+				GPIO.output(IN5,GPIO.LOW)
+				GPIO.output(IN6,GPIO.HIGH)
+				time.sleep(5)
+				GPIO.output(IN5,GPIO.LOW)
+				GPIO.output(IN6,GPIO.LOW)		
+				autoblind =firebase.get('/setup','블라인드')
+				autoblindsetup=firebase.get('/setup','블라인드상태')
+				print("블라인드정지")
+		if autoblind=="\"0\"":
+			up=0
+			down=0
+			GPIO.output(IN5,GPIO.LOW)
+			GPIO.output(IN6,GPIO.LOW)
+			stopauto="\"stop\""
+			autostopblind={"블라인드":stopauto}
+			firebase.patch('/setup',autostopblind) 
+	
+	
